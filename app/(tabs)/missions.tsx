@@ -9,6 +9,7 @@ import { MISSIONS, BADGES } from '../../lib/data';
 import { storage, keys, pct, DEFAULT_DISPLAY } from '../../lib/storage';
 import { Card, ProgressBar, C, SectionLabel } from '../../components/ui';
 import { IcoTarget, IcoPlus, IcoX, IcoCheck } from '../../components/icons/Icons';
+import { notifyMissionComplete, notifyMissionCreated } from '../../lib/notifications';
 import type { Mission, DisplaySettings } from '../../lib/types';
 
 // ─── Create Mission Modal ─────────────────────────────────────────────────────
@@ -95,6 +96,7 @@ function ManagerMissions() {
     const updated = [...missions, newM];
     await storage.set(keys.missions(companyId), updated);
     setMissions(updated);
+    notifyMissionCreated(newM.title);
   };
 
   const deleteMission = async (id: number) => {
@@ -109,6 +111,10 @@ function ManagerMissions() {
     );
     await storage.set(keys.missions(companyId), updated);
     setMissions(updated);
+    const mission = missions.find(m => m.id === id);
+    if (mission && delta > 0 && (mission.current + delta) >= mission.target) {
+      notifyMissionComplete(mission.title);
+    }
   };
 
   const activeMissions    = missions.filter(m => m.current < m.target);

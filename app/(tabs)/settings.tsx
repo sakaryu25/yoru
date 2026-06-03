@@ -13,6 +13,7 @@ import {
   IcoLogOut, IcoBuilding, IcoEdit, IcoCheck, IcoX,
   IcoStar, IcoTarget, IcoChart, IcoUsers,
 } from '../../components/icons/Icons';
+import { scheduleDailyReminder, cancelAllScheduled } from '../../lib/notifications';
 
 import type { BackSettings, DisplaySettings } from '../../lib/types';
 
@@ -193,6 +194,10 @@ function ManagerSettings({ companyId, storeName }: { companyId: string; storeNam
         ))}
       </Card>
 
+      {/* Notification settings */}
+      <SectionLabel>通知設定</SectionLabel>
+      <NotificationSettings />
+
       {editing && (
         <EditModal
           label={editing.label}
@@ -203,6 +208,64 @@ function ManagerSettings({ companyId, storeName }: { companyId: string; storeNam
         />
       )}
     </>
+  );
+}
+
+// ─── Notification Settings ────────────────────────────────────────────────────
+
+function NotificationSettings() {
+  const [enabled, setEnabled] = useState(false);
+  const [hour, setHour] = useState(21);
+
+  useEffect(() => {
+    storage.get<boolean>('castboard_notif_enabled', false).then(setEnabled);
+    storage.get<number>('castboard_notif_hour', 21).then(setHour);
+  }, []);
+
+  const toggle = async () => {
+    const next = !enabled;
+    setEnabled(next);
+    await storage.set('castboard_notif_enabled', next);
+    if (next) {
+      await scheduleDailyReminder(hour, 0);
+    } else {
+      await cancelAllScheduled();
+    }
+  };
+
+  const changeHour = async (h: number) => {
+    setHour(h);
+    await storage.set('castboard_notif_hour', h);
+    if (enabled) await scheduleDailyReminder(h, 0);
+  };
+
+  return (
+    <Card>
+      <View style={s.divider && undefined}>
+        <ToggleRow label="毎日のリマインダー" value={enabled} onChange={toggle} />
+      </View>
+      {enabled && (
+        <>
+          <View style={s.divider} />
+          <View style={[s.settingRow, { paddingTop: 12 }]}>
+            <Text style={s.settingLabel}>通知時間</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {[18, 19, 20, 21, 22, 23].map(h => (
+                  <TouchableOpacity
+                    key={h}
+                    onPress={() => changeHour(h)}
+                    style={[s.hourChip, hour === h && s.hourChipActive]}
+                  >
+                    <Text style={[s.hourChipText, hour === h && { color: '#000' }]}>{h}時</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -337,6 +400,9 @@ const s = StyleSheet.create({
   castChip:    { backgroundColor: '#1f1f1f', borderWidth: 1, borderColor: '#2a2a2a', borderRadius: 99, paddingHorizontal: 14, paddingVertical: 8 },
   castChipActive: { backgroundColor: C.gold },
   castChipText:{ color: C.gray4, fontWeight: '700', fontSize: 13 },
+  hourChip:    { backgroundColor: '#1f1f1f', borderWidth: 1, borderColor: '#2a2a2a', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6 },
+  hourChipActive: { backgroundColor: C.gold },
+  hourChipText:{ color: C.gray4, fontWeight: '700', fontSize: 12 },
 });
 
 const m = StyleSheet.create({

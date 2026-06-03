@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator,
+  TextInput, KeyboardAvoidingView, Platform, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -620,11 +621,133 @@ function CastAI() {
   );
 }
 
+// ─── AI Chat ──────────────────────────────────────────────────────────────────
+
+type ChatMessage = { id: string; role: 'user' | 'assistant'; text: string };
+
+function AIChat() {
+  const { session, role, castName } = useAuth();
+  const companyId = session?.companyId ?? 'demo';
+  const flatRef = useRef<FlatList>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { id: '0', role: 'assistant', text: role === 'manager'
+      ? '店舗の売上・キャスト・ミッションについて何でも聞いてください。'
+      : `${castName}さん、何でも相談してください！` }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput('');
+    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text };
+    setMessages(prev => [...prev, userMsg]);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.text })),
+          context: { companyId, role, castName: role === 'cast' ? castName : undefined },
+        }),
+      });
+      const data = await res.json();
+      const reply = data.reply ?? data.message ?? 'エラーが発生しました。';
+      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: reply }]);
+    } catch {
+      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: 'エラーが発生しました。もう一度お試しください。' }]);
+    } finally {
+      setLoading(false);
+      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  };
+
+  return (
+    <SafeAreaView style={a.safe} edges={['top']}>
+      <View style={a.header}>
+        <Text style={a.title}>AIチャット</Text>
+        <Text style={a.headerSub}>{role === 'manager' ? 'マネージャーモード' : `${castName}さん`}</Text>
+      </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={0}>
+        <FlatList
+          ref={flatRef}
+          data={messages}
+          keyExtractor={m => m.id}
+          contentContainerStyle={{ padding: 16, gap: 10 }}
+          onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: true })}
+          renderItem={({ item }) => (
+            <View style={[ch.bubble, item.role === 'user' ? ch.userBubble : ch.aiBubble]}>
+              {item.role === 'assistant' && (
+                <View style={ch.aiTag}><Text style={ch.aiTagText}>✦ AI</Text></View>
+              )}
+              <Text style={[ch.bubbleText, item.role === 'user' && { color: '#000' }]}>{item.text}</Text>
+            </View>
+          )}
+        />
+        {loading && (
+          <View style={ch.typingRow}>
+            <ActivityIndicator size="small" color={C.gold} />
+            <Text style={ch.typingText}>AIが考えています...</Text>
+          </View>
+        )}
+        <View style={ch.inputRow}>
+          <TextInput
+            style={ch.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder="メッセージを入力..."
+            placeholderTextColor={C.gray5}
+            multiline
+            maxLength={500}
+            returnKeyType="send"
+            onSubmitEditing={send}
+          />
+          <TouchableOpacity
+            onPress={send}
+            disabled={!input.trim() || loading}
+            style={[ch.sendBtn, (!input.trim() || loading) && { opacity: 0.4 }]}
+            activeOpacity={0.8}
+          >
+            <Text style={ch.sendText}>送信</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
 // ─── Export ───────────────────────────────────────────────────────────────────
+
+type AIMode = 'analysis' | 'chat';
 
 export default function AITab() {
   const { role } = useAuth();
-  return role === 'manager' ? <ManagerAI /> : <CastAI />;
+  const [mode, setMode] = useState<AIMode>('analysis');
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={ch.modeSwitcher}>
+        {(['analysis', 'chat'] as AIMode[]).map(m => (
+          <TouchableOpacity
+            key={m}
+            onPress={() => setMode(m)}
+            style={[ch.modeBtn, mode === m && ch.modeBtnActive]}
+            activeOpacity={0.8}
+          >
+            <Text style={[ch.modeBtnText, mode === m && { color: '#000' }]}>
+              {m === 'analysis' ? 'AI分析' : 'チャット'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {mode === 'analysis'
+        ? (role === 'manager' ? <ManagerAI /> : <CastAI />)
+        : <AIChat />
+      }
+    </View>
+  );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -692,4 +815,26 @@ const a = StyleSheet.create({
   settingsBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1a1a1a', borderRadius: 14, padding: 14, marginTop: 4 },
   settingsBtnText:{ fontSize: 14, color: C.gray4, flex: 1, marginLeft: 10 },
   disclaimer:     { fontSize: 10, color: C.gray5, lineHeight: 16, textAlign: 'center', paddingHorizontal: 8, marginTop: 4 },
+});
+
+const ch = StyleSheet.create({
+  modeSwitcher:  { flexDirection: 'row', backgroundColor: '#111', marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: 12, padding: 4 },
+  modeBtn:       { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center' },
+  modeBtnActive: { backgroundColor: C.gold },
+  modeBtnText:   { fontSize: 13, fontWeight: '700', color: C.gray4 },
+
+  bubble:        { maxWidth: '85%', borderRadius: 16, padding: 12 },
+  userBubble:    { alignSelf: 'flex-end', backgroundColor: C.gold },
+  aiBubble:      { alignSelf: 'flex-start', backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: 'rgba(212,175,55,0.2)' },
+  bubbleText:    { fontSize: 13, color: '#ddd', lineHeight: 20 },
+  aiTag:         { marginBottom: 6 },
+  aiTagText:     { fontSize: 10, fontWeight: '700', color: C.gold },
+
+  typingRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  typingText:    { fontSize: 12, color: C.gray5 },
+
+  inputRow:      { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  input:         { flex: 1, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, color: '#fff', fontSize: 14, maxHeight: 100 },
+  sendBtn:       { backgroundColor: C.gold, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  sendText:      { fontSize: 13, fontWeight: '900', color: '#000' },
 });

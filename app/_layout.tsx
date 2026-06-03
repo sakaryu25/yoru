@@ -1,12 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../lib/AuthContext';
+import { registerForPushNotifications } from '../lib/notifications';
 
 function Guard() {
   const { session, booting } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  useEffect(() => {
+    if (session) registerForPushNotifications();
+  }, [session]);
 
   React.useEffect(() => {
     if (booting) return;
